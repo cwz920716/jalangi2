@@ -25,24 +25,94 @@
  *
  */
 
+// a nice try, but failed
+
 util = require('util');
 
-function PrimitiveType (val) {
+var MAGIC_NUM = 790130275; // Hex: 0x2f186e63
 
-   /* As of ECMAScript 5, we have six data types that are primitives:
-         Boolean
-         Null
-         Undefined
-         Number
-         String
-         Symbol (new in ECMAScript 6)
-         However, we focus on boxing of Boolean, Number and String
-         We will convert a literal into a object if you have following cases:
-             a = "string"/3/3.2/false;
-             a = b; // a and b will be 2 different objects
-         Why am I doing this? 
-    */
+function ignore(ref) {
+    return ref === undefined || ref === null || util.isFunction(ref);
+}
 
+function isBoxed(obj) {
+
+    if (ignore(obj))
+        return false;
+
+    if ( !util.isObject(obj) )
+        return false;
+
+    if (obj.hasOwnProperty("boxed$$")) {
+        if (obj["boxed$$"] === MAGIC_NUM) 
+            return true;
+    }
+
+    return false;
+
+}
+
+function BoxedObject (val) {
+
+    /* 
+     * let's box any thing
+     *  
+     */
+
+    this.boxed$$ = MAGIC_NUM;
+    this.value$$ = val;
+    this.writer$$ = -1; // this is the event Id for last writer
+}
+
+function shadowMe(obj) {
+
+    if (isBoxed(obj)) {
+        return obj; // only shadow once
+    }
+
+    obj.boxed$$ = MAGIC_NUM;
+    obj.value$$ = obj;
+    obj.writer$$ = -1; // this is the event Id for last writer
+
+    return obj;
+}
+
+function boxMe(obj) {
+
+    if ( ignore(obj) ) {
+        return obj;
+    }
+
+    if ( util.isObject(obj) ) {
+        return shadowMe(obj);
+    } 
+
+    if ( util.isString(obj) || util.isNumber(obj) || util.isBoolean(obj) || util.isSymbol(obj) ) {
+        return new BoxedObject(obj);
+    }
+
+}
+
+function unboxMe(obj) {
+
+    if ( ignore(obj) ) {
+        return obj;
+    }
+
+    if ( isBoxed(obj) ) {
+        return obj.value$$;
+    } else {
+        return obj;
+    }
+
+}
+
+var debug = 1;
+function DEBUG(str) {
+    if (debug == 0)
+         return;
+
+    console.log('DEBUG: ' + str);
 }
 
 (function (sandbox) {
@@ -304,6 +374,7 @@ function PrimitiveType (val) {
          *
          */
         this.getFieldPre = function (iid, base, offset, isComputed, isOpAssign, isMethodCall) {
+            // DEBUG('G(' + iid + ',' + offset + ')');
             return {base: base, offset: offset, skip: false};
         };
 
@@ -342,6 +413,7 @@ function PrimitiveType (val) {
          * <tt>val</tt> are replaced with that from the returned object if an object is returned.
          */
         this.putFieldPre = function (iid, base, offset, val, isComputed, isOpAssign) {
+            // DEBUG('P(' + iid + ',' + offset + ')');
             return {base: base, offset: offset, val: val, skip: false};
         };
 
@@ -375,6 +447,10 @@ function PrimitiveType (val) {
          * replaced with the value stored in the <tt>result</tt> property of the object.
          */
         this.read = function (iid, name, val, isGlobal, isScriptLocal) {
+
+            DEBUG('R(' + name + ')');
+            val = unboxMe(val);
+
             return {result: val};
         };
 
@@ -391,6 +467,10 @@ function PrimitiveType (val) {
          * replaced with the value stored in the <tt>result</tt> property of the object.
          */
         this.write = function (iid, name, val, lhs, isGlobal, isScriptLocal) {
+
+            DEBUG('W(' + name + ')');
+            val = boxMe(val);
+
             return {result: val};
         };
 

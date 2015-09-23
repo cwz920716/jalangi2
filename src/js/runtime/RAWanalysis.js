@@ -25,6 +25,30 @@
  *
  */
 
+var util = require('util');
+var helper = require('./helper');
+
+// TODO: Please Set the env!
+var instrumented_core_path = "/home/cwz/Eve/nodejs/instrumented/";
+
+
+    /* the set will record two things:
+     * the literal name of variables we are accessed
+     * the reference of the object we accessed
+     * Consider a case like X = Y
+     * We have 2 possibilities:
+                 1. X is a variable, maybe some other event callback can also r/w X
+                    However, if they can see X, the only way to modify it is through the exactly same name X
+                 2. X is a of form X.x, where X coule be of another form (XX.x)
+                    if we focus on last level of the form, we are modifying some property of some object, maybe some other event callback can also r/w X.x
+                    But they must hold the reference to X
+       So we restrict our r/w set to these two classes:
+            1. we r/w a variable, it could be global/local/closure
+               we track the 'name' of the variable because that's the only way to access it
+            2. we r/w a property of a object
+               we track the reference of that object
+     */
+
 function EventLog(color) {
     if ( typeof EventLog.counter == 'undefined' ) {
         EventLog.counter = 0;
@@ -32,49 +56,49 @@ function EventLog(color) {
     this.eid = EventLog.counter;
     EventLog.counter++;
 
-    /* the set will record two things:
-     */
-
-    this.readSet = [];
-    this.writeSet = [];
+    this.dependences = {}; // by dependences, it could only be a RAW dependence
     this.color = color;
 
-    this.hasWrite = function (ref) {
-        return this.writeSet.indexOf(ref) >= 0;
+    this.addDependence = function (eid) {
+        if ( !helper.hasKey(this.dependences, eid) ) {
+            this.dependences[eid] = 0;
+        }
+        this.dependences[eid]++;
     };
 }
 
+function AccessLog() {
+    this.reader = -1;
+    this.writer = -1;
 
-// TODO: Please Set the env!
-var instrumented_core_path = "/home/cwz/Eve/nodejs/instrumented/";
-var debug = 1;
-var util = require('util');
+    this.read = function(r) {
+        this.reader = r;
+    };
 
-var colors = ['red', 'blue', 'green', 'purple', 'black'];
+    this.write = function(w) {
+        this.writer = w;
+    };
 
-function getColor(id) {
-    return colors[id % colors.length];
-}
+    this.writeBefore = function() {
+        return this.writer != -1;
+    }
 
-function DEBUG(str) {
-    if (debug == 0)
-         return;
-
-    console.log('DEBUG: ' + str);
-}
-
-function CHECK(b) {
-    if (!b) {
-        DEBUG("assert failed!");
+    this.hasRAW = function(eid) {
+        return this.writeBefore() && this.writer < eid;
     }
 }
 
 function ignore(ref) {
-    return ref === undefined || ref === null || typeof(ref) !== 'object';
+    return ref === undefined || ref === null;
 }
 
 function EventTable() {
-    this.hashes = {};
+    this.hashes = {}; // all event logs, key is eid and value is the EventLog object
+    this.namespace = {} // the name space for all variables, the key will be a var name while value is a descriptor object
+    this.objectspace = [] // the array where we put a object
+    this.shadowspace = [] // the array for annotator of all objects
+                          // theobjectspace and shadowspace always have the same size
+
     this.insert = function (ev) {
         this.hashes[ev.eid] = ev;
     };
@@ -83,28 +107,48 @@ function EventTable() {
         return this.hashes[eid];
     }
 
-    this.pushEventRead = function (eid, ref) {
-        if (ignore(ref))
-            return;
+    this.lookup = function (name) {
+        if (util.isString(name)) {
+            if ( !this.namespace.hasOwnProperty(name) ) {
+                this.namespace[name] = new AccessLog();
+            }
 
-        // DEBUG('+');
+            return this.namespace[name];
+        }
+        
+        helper.ERROR('lookup can only do string searching!');
+    }
 
-        if (this.hashes[eid].readSet.indexOf(ref) >= 0)
-            return;
+    this.searchObj = function (obj) {
+        if (util.isObject(obj)) {
+            var i = this.objectspace.indexOf(obj);
+            if (i < 0) {
+                this.objectspace.push(obj);
+                this.shadowspace.push( new AccessLog() );
+                i = this.objectspace.indexOf(obj);
+            }
 
-        this.hashes[eid].readSet.push(ref);
+            helper.CHECK(i >= 0, "at searchObj()");
+
+            return this.shadowspace[i];
+        }
+
+        helper.ERROR('search can only accept objects!');
+    }
+
+    this.readName = function (eid, name) {
+        var access = this.lookup(name);
+
+        if (access.hasRAW()) {
+            this.hashes[access.writer].addDependence(eid);
+        }
+        access.read(eid);
+
     };
 
-    this.pushEventWrite = function (eid, ref) {
-        if (ignore(ref))
-            return;
-
-        // DEBUG('*');
-
-        if (this.hashes[eid].writeSet.indexOf(ref) >= 0)
-            return;
-
-        this.hashes[eid].writeSet.push(ref);
+    this.writeName = function (eid, name) {
+        var access = this.lookup(name);
+        access.write(eid);
     };
 
     this.numOfRAW = function (evA, evB) {
@@ -115,7 +159,7 @@ function EventTable() {
             var obj = evA.readSet[i];
             var last = true;
 
-            for (var x = evB.eid + 1; x < evA.eid; x++) {
+            for (var x = evB.eid + 1; x <= evA.eid; x++) {
                 if (this.event(x).hasWrite(obj))
                     last = false;
             }
@@ -177,7 +221,7 @@ var etab = new EventTable();
             // console.log('call ' + f.name + ' ' + iid);
 
             if (f.name == 'pin_start') {
-                console.log('===============');
+                console.log('==========================================================');
                 enableTracking = true;
                 activeEvent = new EventLog( getColor(args[1]) );
                 etab.insert(activeEvent);
@@ -210,7 +254,6 @@ var etab = new EventTable();
         this.getField = function (iid, base, offset, val, isComputed, isOpAssign, isMethodCall) {
             if (enableTracking) {
                 etab.pushEventRead(activeEvent.eid, base);
-                etab.pushEventRead(activeEvent.eid, val);
             }
 
             return {result: val};
@@ -221,21 +264,22 @@ var etab = new EventTable();
         this.putField = function (iid, base, offset, val, isComputed, isOpAssign) {
             if (enableTracking) {
                 etab.pushEventWrite(activeEvent.eid, base);
-                etab.pushEventWrite(activeEvent.eid, val);
             }
 
             return {result: val};
         };
         this.read = function (iid, name, val, isGlobal, isScriptLocal) {
             if (enableTracking) {
-                etab.pushEventRead(activeEvent.eid, val);
+                DEBUG('read < ' + name);
+                etab.pushEventRead(activeEvent.eid, name);
             }
 
             return {result: val};
         };
         this.write = function (iid, name, val, lhs, isGlobal, isScriptLocal) {
             if (enableTracking) {
-                etab.pushEventWrite(activeEvent.eid, val);
+                DEBUG('write > ' + name);
+                etab.pushEventWrite(activeEvent.eid, name);
             }
 
             return {result: val};

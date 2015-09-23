@@ -32,9 +32,8 @@ function EventLog(color) {
     this.eid = EventLog.counter;
     EventLog.counter++;
 
-    this.defSet = [];
-    this.useSet = [];
-    this.modSet = [];
+    this.readSet = [];
+    this.writeSet = [];
     this.color = color;
 
     this.hasWrite = function (ref) {
@@ -73,11 +72,6 @@ function ignore(ref) {
 
 function EventTable() {
     this.hashes = {};
-
-    this.DEF_ACT = 0;
-    this.USE_ACT = 0;
-    this.MOD_ACT = 0;
-
     this.insert = function (ev) {
         this.hashes[ev.eid] = ev;
     };
@@ -86,38 +80,30 @@ function EventTable() {
         return this.hashes[eid];
     }
 
-    this.pushAccess = function (eid, ref, act) {
+    this.pushEventRead = function (eid, ref) {
+        if (ignore(ref))
+            return;
+
+        // DEBUG('+');
+
+        if (this.hashes[eid].readSet.indexOf(ref) >= 0)
+            return;
+
+        this.hashes[eid].readSet.push(ref);
+    };
+
+    this.pushEventWrite = function (eid, ref) {
         if (ignore(ref))
             return;
 
         // DEBUG('*');
-        var set;
-        if (act == this.DEF_ACT) {
-            set = this.hashes[eid].defSet;
-        }
-        if (act == this.USE_ACT) {
-            set = this.hashes[eid].useSet;
-        }
-        if (act == this.MOD_ACT) {
-            set = this.hashes[eid].modSet;
-        }
 
-        if (set.indexOf(ref) >= 0)
+        if (this.hashes[eid].writeSet.indexOf(ref) >= 0)
             return;
 
-        set.push(ref);
+        this.hashes[eid].writeSet.push(ref);
     };
 
-    /* for now we focus on object dependence: we may try to wrap non-object in a object so we can treat them the same way
-     * Consider following cases:
-     *     0. a = {...}
-              we are defining the value of reference a
-     *     1. a = b
-     *     2. a.x = b
-     *     3. a.x = b.y
-     *     4. a.x.y = b
-     *     5. var a = b
-     */
     this.numOfRAW = function (evA, evB) {
         CHECK(evA.eid > evB.eid); // make sure A is strictly after B
 

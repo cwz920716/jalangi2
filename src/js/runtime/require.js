@@ -172,7 +172,7 @@ function DEBUG(str) {
                 var required = args[0];
 
                 // TODO: add all core libraries!
-                
+                var core = [];
                 core = ["buffer"];
                 if (core.indexOf(required) >= 0) {
                 } else {
@@ -184,6 +184,18 @@ function DEBUG(str) {
             }
 
             return {f: f, base: base, args: args, skip: false};
+        };
+        this._throw = function (iid, val) {
+            return {result: val};
+        };
+        this.functionEnter = function (iid, f, dis, args) {
+            if (f.name === 'emit') {
+                DEBUG('emit> ' + args[0]);
+            }
+        };
+        this.functionExit = function (iid, returnVal, wrappedExceptionVal) {
+            // DEBUG('FExit> ');
+            return {returnVal: returnVal, wrappedExceptionVal: wrappedExceptionVal, isBacktrack: false};
         };
     }
 
