@@ -25,114 +25,24 @@
  *
  */
 
-// a nice try, but failed
-
+helper = require('./helper');
 util = require('util');
-// iid2l = require('./iidToLocation');
 
-var MAGIC_NUM_BOX = 790130275; // Hex: 0x2f186e63
-var MAGIC_NUM_SHADOW = 790130276; // Hex: 0x2f186e64
+/* First, we only consider access variable namespace in a single module
+ * so we don't consider require because it is kind of special
+ * The goal will be track how closure & variable namespace are defined
+ * and given specific function closure and var name, we can get what this var is refering to
+ * Notice: 1) a run of a function is creating a new scope
+           2) a declaration of a function is creating a new closure with a pointer to the enclosing scope
+           3) a run of closure will also creating a scope
+ */
 
-function ignore(ref) {
-    return ref === undefined || ref === null || util.isFunction(ref);
-}
-
-function isBoxed(obj) {
-
-    if (ignore(obj))
-        return false;
-
-    if ( !util.isObject(obj) )
-        return false;
-
-    if (obj.hasOwnProperty("boxed$$")) {
-        if (obj["boxed$$"] === MAGIC_NUM_BOX) 
-            return true;
-    }
-
-    return false;
+function Closure(parent) {
 
 }
 
-function isShadowed(obj) {
-
-    if (ignore(obj))
-        return false;
-
-    if ( !util.isObject(obj) )
-        return false;
-
-    if (obj.hasOwnProperty("boxed$$")) {
-        if (obj["boxed$$"] === MAGIC_NUM_SHADOW) 
-            return true;
-    }
-
-    return false;
-
-}
-
-function BoxedObject (val) {
-
-    /* 
-     * let's box any thing
-     *  
-     */
-
-    this.boxed$$ = MAGIC_NUM_BOX;
-    this.value$$ = val;
-    this.writer$$ = -1; // this is the event Id for last writer
-}
-
-function shadowMe(obj) {
-/*
-    if (isShadowed(obj)) {
-        return obj; // only shadow once
-    }
-
-    obj.boxed$$ = MAGIC_NUM_SHADOW;
-    // obj.value$$ = obj;
-    obj.writer$$ = -1; // this is the event Id for last writer
-*/
-    return obj;
-}
-
-function boxMe(obj) {
-
-    if ( ignore(obj) ) {
-        return obj;
-    }
-
-    if ( util.isObject(obj) ) {
-        return shadowMe(obj);
-    } 
-
-    if ( util.isString(obj) || util.isNumber(obj) || util.isBoolean(obj) || util.isSymbol(obj) ) {
-        return new BoxedObject(obj);
-    }
-
-}
-
-function unboxMe(obj) {
-
-    if ( ignore(obj) ) {
-        return obj;
-    }
-
-    if ( isBoxed(obj) ) {
-        return obj.value$$;
-    } else {
-        return obj;
-    }
-
-}
-
-var debug = 1;
-function DEBUG(str) {
-    if (debug == 0)
-         return;
-
-    console.log('DEBUG: ' + str);
-}
+functs = [];
+outers = [];
 
 (function (sandbox) {
     /**
@@ -248,6 +158,8 @@ function DEBUG(str) {
          *
          */
         this.invokeFunPre = function (iid, f, base, args, isConstructor, isMethod, functionIid) {
+            // helper.DEBUG('invoke>' + f.name);
+
             return {f: f, base: base, args: args, skip: false};
         };
 
@@ -323,6 +235,8 @@ function DEBUG(str) {
          *
          */
         this.literal = function (iid, val, hasGetterSetter) {
+            if (util.isFunction(val))
+                 helper.DEBUG('literal Funct>');
             return {result: val};
         };
 
@@ -373,6 +287,16 @@ function DEBUG(str) {
          *
          */
         this.declare = function (iid, name, val, isArgument, argumentIndex, isCatchParam) {
+
+            if (util.isFunction(val)) {     
+                 helper.DEBUG('declare>' + name);
+            
+                 if (functs.indexOf(val) < 0) {
+                     helper.DEBUG('push>' + name);
+                     functs.push(val);
+                 }
+            }
+
             return {result: val};
         };
 
@@ -393,7 +317,6 @@ function DEBUG(str) {
          *
          */
         this.getFieldPre = function (iid, base, offset, isComputed, isOpAssign, isMethodCall) {
-            DEBUG('G(' + sandbox.iidToLocation(sandbox.sid, iid) + ',' + offset + ')');
             return {base: base, offset: offset, skip: false};
         };
 
@@ -432,7 +355,6 @@ function DEBUG(str) {
          * <tt>val</tt> are replaced with that from the returned object if an object is returned.
          */
         this.putFieldPre = function (iid, base, offset, val, isComputed, isOpAssign) {
-            DEBUG('P(' + sandbox.iidToLocation(sandbox.sid, iid) + ',' + offset + ')');
             return {base: base, offset: offset, val: val, skip: false};
         };
 
@@ -466,10 +388,6 @@ function DEBUG(str) {
          * replaced with the value stored in the <tt>result</tt> property of the object.
          */
         this.read = function (iid, name, val, isGlobal, isScriptLocal) {
-
-            DEBUG('R(' + sandbox.iidToLocation(sandbox.sid, iid) + ',' + name + ',' + ')');
-            val = unboxMe(val);
-
             return {result: val};
         };
 
@@ -486,10 +404,6 @@ function DEBUG(str) {
          * replaced with the value stored in the <tt>result</tt> property of the object.
          */
         this.write = function (iid, name, val, lhs, isGlobal, isScriptLocal) {
-
-            DEBUG('W(' + sandbox.iidToLocation(sandbox.sid, iid) + ',' + name + ')');
-            val = boxMe(val);
-
             return {result: val};
         };
 

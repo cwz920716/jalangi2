@@ -59,11 +59,13 @@ function EventLog(color) {
     this.dependences = {}; // by dependences, it could only be a RAW dependence
     this.color = color;
 
-    this.addDependence = function (eid) {
+    this.addDependence = function (eid, tag) {
         if ( !helper.hasKey(this.dependences, eid) ) {
-            this.dependences[eid] = 0;
+            this.dependences[eid] = { val : 0, tag : '' };
         }
-        this.dependences[eid]++;
+        this.dependences[eid].val++;
+        if (tag !== ':' && this.dependences[eid].tag.indexOf(tag) < 0)
+            this.dependences[eid].tag = this.dependences[eid].tag + ':' + tag;
     };
 }
 
@@ -89,7 +91,7 @@ function AccessLog() {
 }
 
 function ignore(ref) {
-    return ref === undefined || ref === null;
+    return ref === undefined || ref === null || !util.isObject(ref);
 }
 
 function EventTable() {
@@ -139,8 +141,8 @@ function EventTable() {
     this.readName = function (eid, name) {
         var access = this.lookup(name);
 
-        if (access.hasRAW()) {
-            this.hashes[access.writer].addDependence(eid);
+        if (access.hasRAW(eid)) {
+            // this.hashes[access.writer].addDependence(eid, name);
         }
         access.read(eid);
 
@@ -151,27 +153,25 @@ function EventTable() {
         access.write(eid);
     };
 
-    this.numOfRAW = function (evA, evB) {
-        CHECK(evA.eid > evB.eid); // make sure A is strictly after B
+    this.readObj = function (eid, obj) {
+        if (ignore(obj))
+            return;
 
-        var deps = 0;
-        for (var i in evA.readSet) {
-            var obj = evA.readSet[i];
-            var last = true;
+        var access = this.searchObj(obj);
 
-            for (var x = evB.eid + 1; x <= evA.eid; x++) {
-                if (this.event(x).hasWrite(obj))
-                    last = false;
-            }
-
-            if (last && evB.hasWrite(obj)) {
-                // DEBUG(util.inspect(obj));
-                deps++;
-            }
+        if (access.hasRAW(eid)) {
+            this.hashes[access.writer].addDependence(eid, ':');
         }
+        access.read(eid);
+    };
 
-        return deps;
-    }
+    this.writeObj = function (eid, obj) {
+        if (ignore(obj))
+            return;
+
+        var access = this.searchObj(obj);
+        access.write(eid);
+    };
 
     this.generateDAG = function () {
         var dot = "digraph edg {\n";
@@ -180,21 +180,21 @@ function EventTable() {
 
         for (i = 0; i < ne; i++) {
             var cur = this.hashes[i];
-            console.log(cur.readSet.length);
+            var deps = cur.dependences;
             dot = dot + i + " [ color=" + cur.color + " , style=filled, fontcolor=white ];\n";
 
-            for (j = i + 1; j < ne; j++) {
-                var ref = this.hashes[j];
+            for (var k in deps) {
                 // DEBUG('ref> ' + ref.readSet.length);
-                var num = etab.numOfRAW(ref, cur);
+                var num = deps[k].val;
+                var label = deps[k].tag;
 
                 if (num > 0) {
                     // there is RAW edge for (i, j)
                     var penwidth = num;
                     if (penwidth > 4.0) penwidth = 4.0;
                 
-                    var edge = "" + i + "->" + j +
-                               " [ label=\"" + num + "\", penwidth=" + penwidth + " ];\n";
+                    var edge = "" + i + "->" + k +
+                               " [ label=\"" + num + "/" + label + "\", penwidth=" + penwidth + " ];\n";
                     dot = dot + edge;
                 }
             }
@@ -223,10 +223,10 @@ var etab = new EventTable();
             if (f.name == 'pin_start') {
                 console.log('==========================================================');
                 enableTracking = true;
-                activeEvent = new EventLog( getColor(args[1]) );
+                activeEvent = new EventLog( helper.getColor(args[1]) );
                 etab.insert(activeEvent);
                 for (var arg in args[0]) {
-                    etab.pushEventWrite(activeEvent.eid, args[0][arg]);
+                    etab.writeObj(activeEvent.eid, args[0][arg]);
                 }
             }
             if (f.name == 'pin_end') {
@@ -243,7 +243,7 @@ var etab = new EventTable();
         };
         this.declare = function (iid, name, val, isArgument, argumentIndex, isCatchParam) {
             if (enableTracking) {
-                etab.pushEventWrite(activeEvent.eid, val);
+                etab.writeName(activeEvent.eid, name);
             }
 
             return {result: val};
@@ -253,7 +253,7 @@ var etab = new EventTable();
         };
         this.getField = function (iid, base, offset, val, isComputed, isOpAssign, isMethodCall) {
             if (enableTracking) {
-                etab.pushEventRead(activeEvent.eid, base);
+                etab.readObj(activeEvent.eid, base);
             }
 
             return {result: val};
@@ -263,23 +263,23 @@ var etab = new EventTable();
         };
         this.putField = function (iid, base, offset, val, isComputed, isOpAssign) {
             if (enableTracking) {
-                etab.pushEventWrite(activeEvent.eid, base);
+                etab.writeObj(activeEvent.eid, base);
             }
 
             return {result: val};
         };
         this.read = function (iid, name, val, isGlobal, isScriptLocal) {
             if (enableTracking) {
-                DEBUG('read < ' + name);
-                etab.pushEventRead(activeEvent.eid, name);
+                helper.DEBUG('read < ' + name);
+                etab.readName(activeEvent.eid, name);
             }
 
             return {result: val};
         };
         this.write = function (iid, name, val, lhs, isGlobal, isScriptLocal) {
             if (enableTracking) {
-                DEBUG('write > ' + name);
-                etab.pushEventWrite(activeEvent.eid, name);
+                helper.DEBUG('write > ' + name);
+                etab.writeName(activeEvent.eid, name);
             }
 
             return {result: val};
