@@ -94,11 +94,7 @@ function EventTable() {
 
     this.lookup = function (name) {
         if (util.isString(name)) {
-            if ( !this.namespace.hasOwnProperty(name) ) {
-                this.namespace[name] = new AccessLog();
-            }
-
-            return this.namespace[name];
+            return currentScope.lookup();
         }
         
         helper.ERROR('lookup can only do string searching!');
@@ -224,7 +220,39 @@ var etab = new EventTable();
         this.forinObject = function (iid, val) {
             return {result: val};
         };
+        this.literal = function (iid, val, hasGetterSetter) {
+            if (util.isFunction(val)) {
+                 // helper.DEBUG('literal Funct>');
+
+                 if (!currentScope.isGlobal()) {
+                     // I am not in global, hence a new closure
+                     var etc = {};
+                     etc["iid"] = iid;
+                     var clos = helper.closet.newClosure(val, currentScope, etc);
+                 }
+
+            }
+            return {result: val};
+        };
+        this.forinObject = function (iid, val) {
+            return {result: val};
+        };
         this.declare = function (iid, name, val, isArgument, argumentIndex, isCatchParam) {
+
+            // helper.DEBUG('declare>' + name);
+            if (util.isFunction(val)) {     
+
+                 if (!currentScope.isGlobal()) {
+                     // I am not in global, hence a new closure
+                     var etc = {};
+                     etc["iid"] = iid;
+                     etc["name"] = name;
+                     var clos = closet.newClosure(val, currentScope, etc);
+                 }
+            }
+            // if (!currentScope.isGlobal()) 
+            currentScope.declare(name);
+
             if (enableTracking) {
                 etab.writeName(activeEvent.eid, name);
             }
@@ -277,8 +305,19 @@ var etab = new EventTable();
             return {result: val};
         };
         this.functionEnter = function (iid, f, dis, args) {
+
+            var scope = newScope(f);
+            // console.log(sandbox.iidToLocation(sandbox.sid, iid));
+            // helper.DEBUG("FE Leave << " + currentScope.print());
+            scopeStack.push(currentScope);
+            currentScope = scope;
+            // helper.DEBUG("FE Enter << " + currentScope.print());
         };
         this.functionExit = function (iid, returnVal, wrappedExceptionVal) {
+
+            // helper.DEBUG("FX Leave << " + currentScope.print());
+            currentScope = scopeStack.pop();
+            // helper.DEBUG("FX Enter << " + currentScope.print());
             return {returnVal: returnVal, wrappedExceptionVal: wrappedExceptionVal, isBacktrack: false};
         };
         this.scriptEnter = function (iid, instrumentedFileName, originalFileName) {
