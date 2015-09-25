@@ -69,30 +69,13 @@ function EventLog(color) {
     };
 }
 
-function AccessLog() {
-    this.reader = -1;
-    this.writer = -1;
-
-    this.read = function(r) {
-        this.reader = r;
-    };
-
-    this.write = function(w) {
-        this.writer = w;
-    };
-
-    this.writeBefore = function() {
-        return this.writer != -1;
-    }
-
-    this.hasRAW = function(eid) {
-        return this.writeBefore() && this.writer < eid;
-    }
-}
-
 function ignore(ref) {
     return ref === undefined || ref === null || !util.isObject(ref);
 }
+
+
+var currentScope = helper.__GLOBAL_SCOPE__;
+var scopeStack = [];
 
 function EventTable() {
     this.hashes = {}; // all event logs, key is eid and value is the EventLog object
@@ -142,7 +125,7 @@ function EventTable() {
         var access = this.lookup(name);
 
         if (access.hasRAW(eid)) {
-            // this.hashes[access.writer].addDependence(eid, name);
+            this.hashes[access.writer].addDependence(eid, name);
         }
         access.read(eid);
 
