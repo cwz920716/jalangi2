@@ -107,7 +107,7 @@ function Scope(f, parent) {
                 return this.parent.lookup(name); // search the name in parent scope
         }
         
-        helper.ERROR('lookup can only do string searching!');
+        ERROR('lookup can only do string searching!' + name);
     }
 
     this.declare = function(name) {
@@ -122,9 +122,11 @@ function Scope(f, parent) {
                 this.namespace[name] = new AccessLog();
                 hasIt = true;
             }
+
+            return;
         }
         
-        helper.ERROR('declare can only do string insertion!');
+        ERROR('declare can only do string insertion!' + name);
     }
 }
 
@@ -133,7 +135,7 @@ exports.__GLOBAL_SCOPE__ = __GLOBAL_SCOPE__;
 
 function Closure(fp, parentScope, etc) {
     this.fp = fp; // For a scope a fp is not just a name/function pointer, it can be used to compare if two closure are the same, like a id.
-    helper.CHECK(parentScope !== null); 
+    CHECK(parentScope !== null); 
     this.parentScope = parentScope;
     this.etc = etc;
 }

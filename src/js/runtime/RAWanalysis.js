@@ -94,7 +94,7 @@ function EventTable() {
 
     this.lookup = function (name) {
         if (util.isString(name)) {
-            return currentScope.lookup();
+            return currentScope.lookup(name);
         }
         
         helper.ERROR('lookup can only do string searching!');
@@ -105,7 +105,7 @@ function EventTable() {
             var i = this.objectspace.indexOf(obj);
             if (i < 0) {
                 this.objectspace.push(obj);
-                this.shadowspace.push( new AccessLog() );
+                this.shadowspace.push( new helper.AccessLog() );
                 i = this.objectspace.indexOf(obj);
             }
 
@@ -247,7 +247,7 @@ var etab = new EventTable();
                      var etc = {};
                      etc["iid"] = iid;
                      etc["name"] = name;
-                     var clos = closet.newClosure(val, currentScope, etc);
+                     var clos = helper.closet.newClosure(val, currentScope, etc);
                  }
             }
             // if (!currentScope.isGlobal()) 
@@ -306,7 +306,7 @@ var etab = new EventTable();
         };
         this.functionEnter = function (iid, f, dis, args) {
 
-            var scope = newScope(f);
+            var scope = helper.newScope(f);
             // console.log(sandbox.iidToLocation(sandbox.sid, iid));
             // helper.DEBUG("FE Leave << " + currentScope.print());
             scopeStack.push(currentScope);
