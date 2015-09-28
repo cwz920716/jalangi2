@@ -190,7 +190,7 @@ function DEBUG(str) {
         };
         this.functionEnter = function (iid, f, dis, args) {
             if (f.name === 'emit') {
-                DEBUG('emit> ' + args[0]);
+                // DEBUG('emit> ' + args[0]);
             }
         };
         this.functionExit = function (iid, returnVal, wrappedExceptionVal) {

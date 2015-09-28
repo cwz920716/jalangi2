@@ -266,7 +266,7 @@ var scopeStack = [];
         this.declare = function (iid, name, val, isArgument, argumentIndex, isCatchParam) {
 
             helper.DEBUG('declare>' + name);
-            if (util.isFunction(val)) {     
+/*            if (util.isFunction(val)) {     
 
                  if (!currentScope.isGlobal()) {
                      // I am not in global, hence a new closure
@@ -276,6 +276,7 @@ var scopeStack = [];
                      var clos = closet.newClosure(val, currentScope, etc);
                  }
             }
+*/
             // if (!currentScope.isGlobal()) 
                 currentScope.declare(name);
 

@@ -49,26 +49,6 @@ var instrumented_core_path = "/home/cwz/Eve/nodejs/instrumented/";
                we track the reference of that object
      */
 
-function EventLog(color) {
-    if ( typeof EventLog.counter == 'undefined' ) {
-        EventLog.counter = 0;
-    }
-    this.eid = EventLog.counter;
-    EventLog.counter++;
-
-    this.dependences = {}; // by dependences, it could only be a RAW dependence
-    this.color = color;
-
-    this.addDependence = function (eid, tag) {
-        if ( !helper.hasKey(this.dependences, eid) ) {
-            this.dependences[eid] = { val : 0, tag : '' };
-        }
-        this.dependences[eid].val++;
-        if (tag !== ':' && this.dependences[eid].tag.indexOf(tag) < 0)
-            this.dependences[eid].tag = this.dependences[eid].tag + ':' + tag;
-    };
-}
-
 function ignore(ref) {
     return ref === undefined || ref === null || !util.isObject(ref);
 }
@@ -155,10 +135,11 @@ function EventTable() {
     this.generateDAG = function () {
         var dot = "digraph edg {\n";
 
-        var i = 0, j = 0, ne = EventLog.counter;
+        var i = 0, j = 0, ne = helper.EventLog.counter;
 
         for (i = 0; i < ne; i++) {
             var cur = this.hashes[i];
+            helper.DEBUG(i + ' :is: ' + cur.type);
             var deps = cur.dependences;
             dot = dot + i + " [ color=" + cur.color + " , style=filled, fontcolor=white ];\n";
 
@@ -166,6 +147,7 @@ function EventTable() {
                 // DEBUG('ref> ' + ref.readSet.length);
                 var num = deps[k].val;
                 var label = deps[k].tag;
+                var x = this.hashes[k];
 
                 if (num > 0) {
                     // there is RAW edge for (i, j)
@@ -202,7 +184,7 @@ var etab = new EventTable();
             if (f.name == 'pin_start') {
                 console.log('==========================================================');
                 enableTracking = true;
-                activeEvent = new EventLog( helper.getColor(args[1]) );
+                activeEvent = new helper.EventLog( args[0], helper.getColor(args[0]) );
                 etab.insert(activeEvent);
                 for (var arg in args[0]) {
                     etab.writeObj(activeEvent.eid, args[0][arg]);
@@ -238,18 +220,6 @@ var etab = new EventTable();
             return {result: val};
         };
         this.declare = function (iid, name, val, isArgument, argumentIndex, isCatchParam) {
-
-            // helper.DEBUG('declare>' + name);
-            if (util.isFunction(val)) {     
-
-                 if (!currentScope.isGlobal()) {
-                     // I am not in global, hence a new closure
-                     var etc = {};
-                     etc["iid"] = iid;
-                     etc["name"] = name;
-                     var clos = helper.closet.newClosure(val, currentScope, etc);
-                 }
-            }
             // if (!currentScope.isGlobal()) 
             currentScope.declare(name);
 

@@ -9,9 +9,16 @@ function DEBUG(str) {
 }
 exports.DEBUG = DEBUG;
 
-var colors = ['red', 'blue', 'green', 'purple', 'black'];
-function getColor(id) {
-    return colors[id % colors.length];
+var colors = ["red", "grey", "blue", "green", "yellow", "pink", "purple", "orange", "brown"];
+var evs = [];
+function getColor(ev) {
+    var idx = evs.indexOf(ev);
+    if (idx < 0) {
+        evs.push(ev);
+        idx = evs.indexOf(ev);
+    }
+
+    return colors[idx % colors.length];
 }
 exports.getColor = getColor;
 
@@ -61,7 +68,7 @@ function AccessLog() {
     }
 
     this.hasRAW = function(eid) {
-        return this.writeBefore() && this.writer < eid;
+        return this.writeBefore() && this.writer !== eid;
     }
 }
 exports.AccessLog = AccessLog;
@@ -189,5 +196,173 @@ function newScope(f) {
 exports.newScope = newScope;
 
 
+function EventLog(type, color) {
+    if ( typeof EventLog.counter == 'undefined' ) {
+        EventLog.counter = 0;
+    }
+    this.eid = EventLog.counter;
+    this.type= type;
+    EventLog.counter++;
 
+    this.dependences = {}; // by dependences, it could only be a RAW dependence
+    this.color = color;
+
+    this.addDependence = function (eid, tag) {
+        if ( !hasKey(this.dependences, eid) ) {
+            this.dependences[eid] = { val : 0, tag : '' };
+        }
+        this.dependences[eid].val++;
+        if (tag !== ':' && this.dependences[eid].tag.indexOf(tag) < 0)
+            this.dependences[eid].tag = this.dependences[eid].tag + ':' + tag;
+    };
+}
+exports.EventLog = EventLog;
+
+function recvSet () {
+    this.set = [];
+
+    this.add = function (recv) {
+        if (this.set.indexOf(recv) < 0) {
+            this.set.push(recv);
+        }
+        return this.set.indexOf(recv);
+    };
+
+    this.getIndex = function (recv) {
+        return this.set.indexOf(recv);
+    };
+
+    this.has = function (recv) {
+        return this.set.indexOf(recv) >= 0;
+    };
+} 
+
+// common case is only one owner will register one event
+// so for now, goto easy case...
+function ListenerTable() {
+    this.cbMap = {}; // new ArrayMap();
+    this.ownerMap = {}; // new ArrayMap();
+    this.onceMap = {}; // new ArrayMap();
+    this.rset = new recvSet();
+
+    this.toListenerId = function (type, recv) {
+        if (this.rset.has(recv)) {
+            var idx = this.rset.getIndex(recv);
+            return '__' + type + '_' + idx + '__';
+        } else
+            return null;
+    };
+
+    this.register = function (eid, type, recv, cb, once) {
+        this.rset.add(recv);
+        var id = this.toListenerId(type, recv);
+        this.cbMap[id] = cb; // this.cbMap.add(id, cb);
+        this.ownerMap[id] = eid; // this.ownerMap.add(id, eid);
+        this.onceMap[id] = once; // this.onceMap.add(id, once);
+    };
+
+    this.unregister = function (type, recv) {
+        var id = this.toListenerId(type, recv);
+        this.cbMap[id] = null;
+        this.ownerMap[id] = null;
+        this.onceMap[id] = null;
+    };
+
+    this.isRegistered = function (type, recv) {
+        var id = this.toListenerId(type, recv);
+        if (id === null)
+            return false;
+        else
+            return this.ownerMap.hasOwnProperty(id) && this.ownerMap[id] !== null;
+    };
+
+    this.isOnceRegistered = function (type, recv) {
+        var id = this.toListenerId(type, recv);
+        if (this.isRegistered(type, recv))
+            return this.onceMap[id];
+        else
+            return false;
+    };
+
+    this.getRegisterEvents = function (type, recv) {
+        var id = this.toListenerId(type, recv);
+        if (this.isRegistered(type, recv)) {
+            return this.ownerMap[id];
+        } else
+            return null;
+    };
+
+}
+exports.ListenerTable = ListenerTable;
+
+var __NO_EVENT__ = -1;
+exports.noev = __NO_EVENT__;
+
+// ----------------------------------------------------------------------------------------------------------------------------------------------
+// Here starts DRAFT functions, DO NOT use
+
+function ArrayMap() {
+    this.map = {};
+
+    this.add = function (k, v) {
+        if (!map.hasOwnProperty()) {
+            map[k] = [];
+        }
+        map[k].push(v);
+    };
+
+    this.remove = function (k, v) {
+        if (!map.hasOwnProperty(k)) {
+            return;
+        }
+        var idx = map[k].indexOf(v);
+        if (idx >= 0) {
+            map[k].splice(idx, 1);
+        }
+    };
+
+    this.removeByIndex = function (k, idx) {
+        if (!map.hasOwnProperty(k)) {
+            return;
+        }
+        if (idx >= 0 && idx < map[k].length) {
+            map[k].splice(idx, 1);
+        }
+    };
+    
+    this.getIndex = function (k, v) {
+        if (!map.hasOwnProperty(k)) {
+            return;
+        }
+        var idx = map[k].indexOf(v);
+        return idx;
+    }
+
+    this.hasV = function(k, v) {
+        if (!map.hasOwnProperty(k)) {
+            return false;
+        }
+
+        return map[k].indexOf(v) >= 0;
+    };
+
+    this.hasK = function(k) {
+        if (!map.hasOwnProperty(k)) {
+            return false;
+        }
+
+        return map[k].length > 0;
+    };
+
+    this.getV = function(k) {
+        var res = [];
+        if (!this.hasK(k)) return res;
+
+        for (var i in map[k]) {
+            res.push(map[k][i]);
+        }
+
+        return res;
+    };
+}
 
