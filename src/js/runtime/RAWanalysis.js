@@ -57,6 +57,9 @@ function ignore(ref) {
 var currentScope = helper.__GLOBAL_SCOPE__;
 var scopeStack = [];
 
+var plotRAW = false;
+var plotCTL = true;
+
 function EventTable() {
     this.hashes = {}; // all event logs, key is eid and value is the EventLog object
     this.namespace = {} // the name space for all variables, the key will be a var name while value is a descriptor object
@@ -132,6 +135,11 @@ function EventTable() {
         access.write(eid);
     };
 
+    // target has a CTL dependence in source, e.g., source -> target
+    this.addCTLdependence = function (source, target) {
+        this.hashes[source].addCTLDependence(target);
+    };
+
     this.generateDAG = function () {
         var dot = "digraph edg {\n";
 
@@ -139,23 +147,39 @@ function EventTable() {
 
         for (i = 0; i < ne; i++) {
             var cur = this.hashes[i];
-            helper.DEBUG(i + ' :is: ' + cur.type);
+            // helper.DEBUG(i + ' :is: ' + cur.type);
             var deps = cur.dependences;
             dot = dot + i + " [ color=" + cur.color + " , style=filled, fontcolor=white ];\n";
 
+            if (plotRAW)
             for (var k in deps) {
                 // DEBUG('ref> ' + ref.readSet.length);
                 var num = deps[k].val;
                 var label = deps[k].tag;
-                var x = this.hashes[k];
 
                 if (num > 0) {
-                    // there is RAW edge for (i, j)
+                    // there is RAW edge for (i, k)
                     var penwidth = num;
                     if (penwidth > 4.0) penwidth = 4.0;
                 
                     var edge = "" + i + "->" + k +
                                " [ label=\"" + num + "/" + label + "\", penwidth=" + penwidth + " ];\n";
+                    dot = dot + edge;
+                }
+            }
+
+            var ctldeps = cur.CTLdependences;
+            // if (plotCTL)
+            for (var kk in ctldeps) {
+                var num = ctldeps[kk].val;
+                var label = '';
+
+                if (num > 0) {
+                    // there is CTL edge for (i, k)
+                    var penwidth = 2.0;
+                
+                    var edge = "" + i + "->" + kk +
+                               " [ label=\"" + num + "\", penwidth=" + penwidth + ", style=dashed ];\n";
                     dot = dot + edge;
                 }
             }
@@ -172,26 +196,65 @@ function EventTable() {
 }
 
 var enableTracking = false;
-var activeEvent;
+var activeEvent = helper.noev;
 var etab = new EventTable();
+var listab = new helper.ListenerTable();
 
 (function (sandbox) {
 
     function MyAnalysis() {
         this.invokeFunPre = function (iid, f, base, args, isConstructor, isMethod, functionIid) {
             // console.log('call ' + f.name + ' ' + iid);
+            var fname = f.name;
+            if (fname === 'pin_addListener' || fname === 'pin_addOnceListener') {
+                var type = args[0];
+                var recv = args[1];
+                var cb = args[2];
+                var evid = -1;
+                var once = false;
 
-            if (f.name == 'pin_start') {
-                console.log('==========================================================');
+                if (activeEvent !== helper.noev) {
+                    evid = activeEvent.eid;
+                }
+
+                if (fname === 'pin_addOnceListener') {
+                    once = true;
+                }
+
+                if (evid >= 0) {
+                    listab.register(evid, type, recv, cb, once);
+                }
+                helper.DEBUG(fname + ':' + listab.toListenerId(type, recv));
+                
+            }
+
+            if (fname == 'pin_start') {
+                var type = args[0];
+                var recv = args[1];
+
                 enableTracking = true;
                 activeEvent = new helper.EventLog( args[0], helper.getColor(args[0]) );
                 etab.insert(activeEvent);
                 for (var arg in args[0]) {
                     etab.writeObj(activeEvent.eid, args[0][arg]);
                 }
+
+                helper.DEBUG('===================' + listab.toListenerId(type, recv) + '=======================================');
+                helper.DEBUG('New Eve: ' + activeEvent.eid + ' ' + type);
+
+                if (listab.isRegistered(type, recv)) {
+                    var register = listab.getRegisterEvents(type, recv);
+                    helper.DEBUG(register + "------>" + activeEvent.eid);
+                    etab.addCTLdependence(register, activeEvent.eid);
+                    if (listab.isOnceRegistered(type, recv)) {
+                        listab.unregister(type, recv);
+                    }
+                }
             }
-            if (f.name == 'pin_end') {
+
+            if (fname == 'pin_end') {
                 enableTracking = false;
+                activeEvent = helper.noev;
                 etab.generateDAG();
             }
             return {f: f, base: base, args: args, skip: false};
@@ -251,7 +314,7 @@ var etab = new EventTable();
         };
         this.read = function (iid, name, val, isGlobal, isScriptLocal) {
             if (enableTracking) {
-                helper.DEBUG('read < ' + name);
+                // helper.DEBUG('read < ' + name);
                 etab.readName(activeEvent.eid, name);
             }
 
@@ -259,7 +322,7 @@ var etab = new EventTable();
         };
         this.write = function (iid, name, val, lhs, isGlobal, isScriptLocal) {
             if (enableTracking) {
-                helper.DEBUG('write > ' + name);
+                // helper.DEBUG('write > ' + name);
                 etab.writeName(activeEvent.eid, name);
             }
 

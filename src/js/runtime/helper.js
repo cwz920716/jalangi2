@@ -205,6 +205,7 @@ function EventLog(type, color) {
     EventLog.counter++;
 
     this.dependences = {}; // by dependences, it could only be a RAW dependence
+    this.CTLdependences = {}; // the event-listen/emit dependence
     this.color = color;
 
     this.addDependence = function (eid, tag) {
@@ -214,6 +215,13 @@ function EventLog(type, color) {
         this.dependences[eid].val++;
         if (tag !== ':' && this.dependences[eid].tag.indexOf(tag) < 0)
             this.dependences[eid].tag = this.dependences[eid].tag + ':' + tag;
+    };
+
+    this.addCTLDependence = function (eid) {
+        if ( !hasKey(this.CTLdependences, eid) ) {
+            this.CTLdependences[eid] = { val : 0, tag : '' };
+        }
+        this.CTLdependences[eid].val++;
     };
 }
 exports.EventLog = EventLog;
