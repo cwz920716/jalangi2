@@ -32,6 +32,7 @@ function CHECK(b, msg) {
     if (!b) {
         ERROR("assert failed! " + msg);
     }
+
 }
 exports.CHECK = CHECK;
 
@@ -102,6 +103,9 @@ function Scope(f, parent) {
         var hasIt = false, createIt = this.isGlobal(); // if this is a global scope, we allow lookup() to add names
                                                        // otherwise it can only add name into namespace through declare
 
+        if (name === 'hasOwnProperty')
+            return null;
+
         if (util.isString(name)) {
             hasIt = this.namespace.hasOwnProperty(name);
             if ( !hasIt && createIt ) {
@@ -120,7 +124,7 @@ function Scope(f, parent) {
     this.declare = function(name) {
         var hasIt = false, createIt = true; 
 
-        if (name == 'hasOwnProperty')
+        if (name === 'hasOwnProperty')
             return;
     
         if (util.isString(name)) {

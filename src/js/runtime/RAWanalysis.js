@@ -57,14 +57,15 @@ function ignore(ref) {
 var currentScope = helper.__GLOBAL_SCOPE__;
 var scopeStack = [];
 
-var plotRAW = false;
+var plotRAW = true;
 var plotCTL = true;
+
 
 function EventTable() {
     this.hashes = {}; // all event logs, key is eid and value is the EventLog object
-    this.namespace = {} // the name space for all variables, the key will be a var name while value is a descriptor object
-    this.objectspace = [] // the array where we put a object
-    this.shadowspace = [] // the array for annotator of all objects
+    this.namespace = {}; // the name space for all variables, the key will be a var name while value is a descriptor object
+    this.objectspace = []; // the array where we put a object
+    this.shadowspace = []; // the array for annotator of all objects
                           // theobjectspace and shadowspace always have the same size
 
     this.insert = function (ev) {
@@ -73,7 +74,7 @@ function EventTable() {
 
     this.event = function (eid) {
         return this.hashes[eid];
-    }
+    };
 
     this.lookup = function (name) {
         if (util.isString(name)) {
@@ -81,7 +82,7 @@ function EventTable() {
         }
         
         helper.ERROR('lookup can only do string searching!');
-    }
+    };
 
     this.searchObj = function (obj) {
         if (util.isObject(obj)) {
@@ -98,10 +99,11 @@ function EventTable() {
         }
 
         helper.ERROR('search can only accept objects!');
-    }
+    };
 
     this.readName = function (eid, name) {
         var access = this.lookup(name);
+        if (access === null) return;
 
         if (access.hasRAW(eid)) {
             this.hashes[access.writer].addDependence(eid, name);
@@ -112,6 +114,7 @@ function EventTable() {
 
     this.writeName = function (eid, name) {
         var access = this.lookup(name);
+        if (access === null) return;
         access.write(eid);
     };
 
@@ -188,7 +191,7 @@ function EventTable() {
         dot = dot + "}\n";
 
         var file = require("fs");
-        console.log("Starting...\n" + dot); 
+        console.log("Starting...\n"); 
         file.writeFileSync("dependence.dot", dot);
         console.log("Done ..."); 
     };
@@ -199,6 +202,7 @@ var enableTracking = false;
 var activeEvent = helper.noev;
 var etab = new EventTable();
 var listab = new helper.ListenerTable();
+var numOfHiddenEvents = 0;
 
 (function (sandbox) {
 
@@ -232,6 +236,13 @@ var listab = new helper.ListenerTable();
                 var type = args[0];
                 var recv = args[1];
 
+                if (enableTracking !== false) {
+                    numOfHiddenEvents++;
+                    return {f: f, base: base, args: args, skip: false};
+                }
+
+                helper.CHECK(enableTracking === false, 'No nested pin_start() for ' + type);
+
                 enableTracking = true;
                 activeEvent = new helper.EventLog( args[0], helper.getColor(args[0]) );
                 etab.insert(activeEvent);
@@ -253,8 +264,15 @@ var listab = new helper.ListenerTable();
             }
 
             if (fname == 'pin_end') {
+                helper.CHECK(numOfHiddenEvents >= 0, 'numOfHiddenEvent < 0 ');
+                if (numOfHiddenEvents > 0) {
+                    numOfHiddenEvents--;
+                    return {f: f, base: base, args: args, skip: false};
+                }
+
                 enableTracking = false;
                 activeEvent = helper.noev;
+                helper.CHECK(numOfHiddenEvents === 0, 'No nested pin_end() !!!!');
                 etab.generateDAG();
             }
             return {f: f, base: base, args: args, skip: false};

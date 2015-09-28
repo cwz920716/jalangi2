@@ -173,7 +173,7 @@ function DEBUG(str) {
 
                 // TODO: add all core libraries!
                 var core = [];
-                core = ["buffer"];
+                core = ["buffer", "./fu"];
                 if (core.indexOf(required) >= 0) {
                 } else {
                     args[0] = instrumented_core_path + args[0];
