@@ -9,7 +9,9 @@ function DEBUG(str) {
 }
 exports.DEBUG = DEBUG;
 
-var colors = ["red", "grey", "blue", "green", "yellow", "pink", "purple", "orange", "brown"];
+var colors = ["red", "blue", "green", "yellow", "pink", "purple", "orange", "brown", "AliceBlue", "AntiqueWhite", "Bisque", "BlueViolet", "BurlyWood", "CadetBlue", "Chocolate",
+              "Crimson", "Cyan", "Maroon", "Magenta", 
+              "black"];
 var evs = [];
 function getColor(ev) {
     var idx = evs.indexOf(ev);
@@ -212,13 +214,13 @@ function EventLog(type, color) {
     this.CTLdependences = {}; // the event-listen/emit dependence
     this.color = color;
 
-    this.addDependence = function (eid, tag) {
+    this.addDependence = function (eid, tag, msg) {
         if ( !hasKey(this.dependences, eid) ) {
             this.dependences[eid] = { val : 0, tag : '' };
         }
         this.dependences[eid].val++;
         if (tag !== ':' && this.dependences[eid].tag.indexOf(tag) < 0)
-            this.dependences[eid].tag = this.dependences[eid].tag + ':' + tag;
+            this.dependences[eid].tag = this.dependences[eid].tag + ':' + tag; // + msg;
     };
 
     this.addCTLDependence = function (eid) {
@@ -252,9 +254,8 @@ function recvSet () {
 // common case is only one owner will register one event
 // so for now, goto easy case...
 function ListenerTable() {
-    this.cbMap = {}; // new ArrayMap();
-    this.ownerMap = {}; // new ArrayMap();
-    this.onceMap = {}; // new ArrayMap();
+    this.cbMap = new ArrayMap();
+    this.ownerMap = new ArrayMap();
     this.rset = new recvSet();
 
     this.toListenerId = function (type, recv) {
@@ -265,19 +266,29 @@ function ListenerTable() {
             return null;
     };
 
-    this.register = function (eid, type, recv, cb, once) {
+    this.register = function (eid, type, recv, cb) {
         this.rset.add(recv);
         var id = this.toListenerId(type, recv);
-        this.cbMap[id] = cb; // this.cbMap.add(id, cb);
-        this.ownerMap[id] = eid; // this.ownerMap.add(id, eid);
-        this.onceMap[id] = once; // this.onceMap.add(id, once);
+
+        if (this.isRegistered(type, recv)) {
+            // DEBUG(id + 'is Registtttttttttttttttered!');
+        }
+
+        this.cbMap.add(id, cb);
+        this.ownerMap.add(id, eid);
     };
 
-    this.unregister = function (type, recv) {
+    this.unregister = function (type, recv, cb) {
         var id = this.toListenerId(type, recv);
-        this.cbMap[id] = null;
-        this.ownerMap[id] = null;
-        this.onceMap[id] = null;
+
+        if (!this.isRegistered(type, recv)) {
+            DEBUG(id + 'is UNRegisttttttttttttttttered!');
+            return;
+        }
+
+        var idx = this.cbMap.getIndex(id, cb);
+        this.cbMap.removeByIndex(id, idx);
+        this.ownerMap.removeByIndex(id, idx);
     };
 
     this.isRegistered = function (type, recv) {
@@ -285,23 +296,12 @@ function ListenerTable() {
         if (id === null)
             return false;
         else
-            return this.ownerMap.hasOwnProperty(id) && this.ownerMap[id] !== null;
-    };
-
-    this.isOnceRegistered = function (type, recv) {
-        var id = this.toListenerId(type, recv);
-        if (this.isRegistered(type, recv))
-            return this.onceMap[id];
-        else
-            return false;
+            return this.cbMap.hasK(id);
     };
 
     this.getRegisterEvents = function (type, recv) {
         var id = this.toListenerId(type, recv);
-        if (this.isRegistered(type, recv)) {
-            return this.ownerMap[id];
-        } else
-            return null;
+        return this.ownerMap.getVs(id);
     };
 
 }
@@ -310,63 +310,55 @@ exports.ListenerTable = ListenerTable;
 var __NO_EVENT__ = -1;
 exports.noev = __NO_EVENT__;
 
-// ----------------------------------------------------------------------------------------------------------------------------------------------
-// Here starts DRAFT functions, DO NOT use
-
 function ArrayMap() {
-    this.map = {};
-
-    this.add = function (k, v) {
-        if (!map.hasOwnProperty()) {
-            map[k] = [];
-        }
-        map[k].push(v);
-    };
-
-    this.remove = function (k, v) {
-        if (!map.hasOwnProperty(k)) {
-            return;
-        }
-        var idx = map[k].indexOf(v);
-        if (idx >= 0) {
-            map[k].splice(idx, 1);
-        }
-    };
-
-    this.removeByIndex = function (k, idx) {
-        if (!map.hasOwnProperty(k)) {
-            return;
-        }
-        if (idx >= 0 && idx < map[k].length) {
-            map[k].splice(idx, 1);
-        }
-    };
-    
-    this.getIndex = function (k, v) {
-        if (!map.hasOwnProperty(k)) {
-            return;
-        }
-        var idx = map[k].indexOf(v);
-        return idx;
-    }
-
-    this.hasV = function(k, v) {
-        if (!map.hasOwnProperty(k)) {
-            return false;
-        }
-
-        return map[k].indexOf(v) >= 0;
-    };
+    this.amap = {};
 
     this.hasK = function(k) {
+        var map = this.amap;
         if (!map.hasOwnProperty(k)) {
             return false;
         }
 
         return map[k].length > 0;
     };
+    
+    // return hasK() & has V
+    this.getIndex = function (k, v) {
+        var map = this.amap;
+        if (!this.hasK(k)) {
+            return -1;
+        }
+        var idx = map[k].indexOf(v);
+        return idx;
+    };
 
-    this.getV = function(k) {
+    this.hasV = function(k, v) {
+        var map = this.amap;
+        return this.getIndex(k, v) >= 0;
+    };
+
+    this.add = function (k, v) {
+        var map = this.amap;
+
+        if (!this.hasK(k)) {
+            map[k] = [];
+        }
+        map[k].push(v);
+    };
+
+    this.removeByIndex = function (k, idx) {
+        var map = this.amap;
+        if (!this.hasK(k)) {
+            return;
+        }
+        if (idx >= 0 && idx < map[k].length) {
+            map[k].splice(idx, 1);
+        } else
+            ERROR('Arraymap do not has that idx!');
+    };
+
+    this.getVs = function(k) {
+        var map = this.amap;
         var res = [];
         if (!this.hasK(k)) return res;
 

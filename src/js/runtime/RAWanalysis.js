@@ -53,17 +53,21 @@ function ignore(ref) {
     return ref === undefined || ref === null || !util.isObject(ref);
 }
 
+function notIgnore(ref) {
+    return ref !== undefined && ref !== null && util.isObject(ref);
+}
+
 
 var currentScope = helper.__GLOBAL_SCOPE__;
 var scopeStack = [];
 
-var plotRAW = true;
+var plotRAW = false;
 var plotCTL = true;
 
 
 function EventTable() {
     this.hashes = {}; // all event logs, key is eid and value is the EventLog object
-    this.namespace = {}; // the name space for all variables, the key will be a var name while value is a descriptor object
+    // this.namespace = {}; // the name space for all variables, the key will be a var name while value is a descriptor object
     this.objectspace = []; // the array where we put a object
     this.shadowspace = []; // the array for annotator of all objects
                           // theobjectspace and shadowspace always have the same size
@@ -101,18 +105,18 @@ function EventTable() {
         helper.ERROR('search can only accept objects!');
     };
 
-    this.readName = function (eid, name) {
+    this.readName = function (eid, name, loc) {
         var access = this.lookup(name);
         if (access === null) return;
 
         if (access.hasRAW(eid)) {
-            this.hashes[access.writer].addDependence(eid, name);
+            this.hashes[access.writer].addDependence(eid, name, loc);
         }
         access.read(eid);
 
     };
 
-    this.writeName = function (eid, name) {
+    this.writeName = function (eid, name, loc) {
         var access = this.lookup(name);
         if (access === null) return;
         access.write(eid);
@@ -140,7 +144,9 @@ function EventTable() {
 
     // target has a CTL dependence in source, e.g., source -> target
     this.addCTLdependence = function (source, target) {
-        this.hashes[source].addCTLDependence(target);
+        if (source >= 0 && source != target) { 
+            this.hashes[source].addCTLDependence(target);
+        }
     };
 
     this.generateDAG = function () {
@@ -152,7 +158,7 @@ function EventTable() {
             var cur = this.hashes[i];
             // helper.DEBUG(i + ' :is: ' + cur.type);
             var deps = cur.dependences;
-            dot = dot + i + " [ color=" + cur.color + " , style=filled, fontcolor=white ];\n";
+            dot = dot + i + " [ color=" + cur.color + " , style=filled, fontcolor=grey ];\n";
 
             if (plotRAW)
             for (var k in deps) {
@@ -182,7 +188,7 @@ function EventTable() {
                     var penwidth = 2.0;
                 
                     var edge = "" + i + "->" + kk +
-                               " [ label=\"" + num + "\", penwidth=" + penwidth + ", style=dashed ];\n";
+                               " [ penwidth=" + penwidth + ", style=dashed ];\n";
                     dot = dot + edge;
                 }
             }
@@ -191,7 +197,7 @@ function EventTable() {
         dot = dot + "}\n";
 
         var file = require("fs");
-        console.log("Starting...\n"); 
+        console.log("Start Ploting...\n"); 
         file.writeFileSync("dependence.dot", dot);
         console.log("Done ..."); 
     };
@@ -210,55 +216,71 @@ var numOfHiddenEvents = 0;
         this.invokeFunPre = function (iid, f, base, args, isConstructor, isMethod, functionIid) {
             // console.log('call ' + f.name + ' ' + iid);
             var fname = f.name;
-            if (fname === 'pin_addListener' || fname === 'pin_addOnceListener') {
+            if (fname === 'pin_addListener') {
                 var type = args[0];
                 var recv = args[1];
                 var cb = args[2];
                 var evid = -1;
-                var once = false;
 
                 if (activeEvent !== helper.noev) {
                     evid = activeEvent.eid;
                 }
 
-                if (fname === 'pin_addOnceListener') {
-                    once = true;
-                }
-
-                if (evid >= 0) {
-                    listab.register(evid, type, recv, cb, once);
-                }
+                // if (evid >= 0) {
+                    listab.register(evid, type, recv, cb);
+                // }
                 helper.DEBUG(fname + ':' + listab.toListenerId(type, recv));
                 
+            }
+
+            if (fname === 'pin_removeListener') {
+                var type = args[0];
+                var recv = args[1];
+                var cb = args[2];
+                helper.DEBUG(fname + ':' + listab.toListenerId(type, recv));
+                listab.unregister(type, recv, cb);
+            }
+
+            if (fname === 'emit') {
+                helper.DEBUG('emit> ' + args[0] + ' ' + sandbox.iidToLocation(sandbox.sid, iid));
             }
 
             if (fname == 'pin_start') {
                 var type = args[0];
                 var recv = args[1];
+                var cb_args = args[2];
+                var id = listab.toListenerId(type, recv);
 
                 if (enableTracking !== false) {
+                    helper.DEBUG('------------------' + type + '---------------------------------------');
                     numOfHiddenEvents++;
-                    return {f: f, base: base, args: args, skip: false};
+                    for (var arg in cb_args) {
+                        if (notIgnore(cb_args[arg]))
+                            etab.writeObj(activeEvent.eid, cb_args[arg]); // FIXME: The args should be thought of write!
+                    }
+                    // return {f: f, base: base, args: args, skip: false};
+                } else {
+
+                    helper.CHECK(enableTracking === false, 'No nested pin_start() for ' + type);
+
+                    enableTracking = true;
+                    activeEvent = new helper.EventLog( id, helper.getColor(id) );
+                    etab.insert(activeEvent);
+                    for (var arg in cb_args) {
+                        if (notIgnore(cb_args[arg]))
+                            etab.writeObj(activeEvent.eid, cb_args[arg]); // FIXME: The args should be thought of write!
+                    }
+
+                    helper.DEBUG('===================' + id + '=======================================');
+                    helper.DEBUG('New Eve: ' + activeEvent.eid);
                 }
-
-                helper.CHECK(enableTracking === false, 'No nested pin_start() for ' + type);
-
-                enableTracking = true;
-                activeEvent = new helper.EventLog( args[0], helper.getColor(args[0]) );
-                etab.insert(activeEvent);
-                for (var arg in args[0]) {
-                    etab.writeObj(activeEvent.eid, args[0][arg]);
-                }
-
-                helper.DEBUG('===================' + listab.toListenerId(type, recv) + '=======================================');
-                helper.DEBUG('New Eve: ' + activeEvent.eid + ' ' + type);
 
                 if (listab.isRegistered(type, recv)) {
-                    var register = listab.getRegisterEvents(type, recv);
-                    helper.DEBUG(register + "------>" + activeEvent.eid);
-                    etab.addCTLdependence(register, activeEvent.eid);
-                    if (listab.isOnceRegistered(type, recv)) {
-                        listab.unregister(type, recv);
+                    var registers = listab.getRegisterEvents(type, recv);
+
+                    for (var reg in registers) {
+                        helper.DEBUG(registers[reg] + "------>" + activeEvent.eid);
+                        etab.addCTLdependence(registers[reg], activeEvent.eid);
                     }
                 }
             }
@@ -333,7 +355,7 @@ var numOfHiddenEvents = 0;
         this.read = function (iid, name, val, isGlobal, isScriptLocal) {
             if (enableTracking) {
                 // helper.DEBUG('read < ' + name);
-                etab.readName(activeEvent.eid, name);
+                etab.readName(activeEvent.eid, name, sandbox.iidToLocation(sandbox.sid, iid));
             }
 
             return {result: val};
@@ -341,7 +363,7 @@ var numOfHiddenEvents = 0;
         this.write = function (iid, name, val, lhs, isGlobal, isScriptLocal) {
             if (enableTracking) {
                 // helper.DEBUG('write > ' + name);
-                etab.writeName(activeEvent.eid, name);
+                etab.writeName(activeEvent.eid, name, sandbox.iidToLocation(sandbox.sid, iid));
             }
 
             return {result: val};
