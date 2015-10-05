@@ -29,6 +29,7 @@
 // TODO: Please Set the env!
 var instrumented_core_path = "/home/cwz/Eve/nodejs/instrumented/";
 var debug = 1;
+cores = require('./cores');
 
 function ERROR(str) {
     console.log('ERROR: ' + str);
@@ -172,12 +173,9 @@ function DEBUG(str) {
                 var required = args[0];
 
                 // TODO: add all core libraries!
-                var core = [];
-                core = ["buffer", "./fu"];
-                if (core.indexOf(required) >= 0) {
-                } else {
+                if (cores.cores.indexOf(required) >= 0) {
                     args[0] = instrumented_core_path + args[0];
-                }  
+                }
 
                 DEBUG(f.name + '(' + args[0] + ')');
 
