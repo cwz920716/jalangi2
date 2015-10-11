@@ -61,8 +61,8 @@ function notIgnore(ref) {
 var currentScope = helper.__GLOBAL_SCOPE__;
 var scopeStack = [];
 
-var plotRAW = true;
-var plotCTL = false;
+var plotRAW = false;
+var plotCTL = true;
 
 
 function EventTable() {
@@ -119,13 +119,6 @@ function EventTable() {
     this.writeName = function (eid, name, loc) {
         var access = this.lookup(name);
         if (access === null) return;
-
-        if (access.hasWAW(eid)) {
-            this.hashes[access.writer].addDependence(eid, name, loc);
-        }
-        if (access.hasWAR(eid)) {
-            this.hashes[access.reader].addDependence(eid, name, loc);
-        }
         access.write(eid);
     };
 
@@ -146,12 +139,6 @@ function EventTable() {
             return;
 
         var access = this.searchObj(obj);
-        if (access.hasWAW(eid)) {
-            this.hashes[access.writer].addDependence(eid, ':');
-        }
-        if (access.hasWAR(eid)) {
-            this.hashes[access.reader].addDependence(eid, ':');
-        }
         access.write(eid);
     };
 
@@ -162,18 +149,16 @@ function EventTable() {
         }
     };
 
-    this.generateDAG = function (etab) {
+    this.generateDAG = function () {
         var dot = "digraph edg {\n";
-        var weights = "";
 
         var i = 0, j = 0, ne = helper.EventLog.counter;
 
         for (i = 0; i < ne; i++) {
-            var cur = etab.hashes[i];
+            var cur = this.hashes[i];
             // helper.DEBUG(i + ' :is: ' + cur.type);
             var deps = cur.dependences;
             dot = dot + i + " [ color=" + cur.color + " , style=filled, fontcolor=grey ];\n";
-            weights = weights + i + '\t' + cur.ctlInst + '\n';
 
             if (plotRAW)
             for (var k in deps) {
@@ -214,27 +199,26 @@ function EventTable() {
         var file = require("fs");
         console.log("Start Ploting...\n"); 
         file.writeFileSync("dependence.dot", dot);
-        file.writeFileSync("weights.txt", weights);
         console.log("Done ..."); 
-
     };
 
 }
 
 var enableTracking = false;
 var activeEvent = helper.noev;
+var ctlInst = 0;
 var etab = new EventTable();
 var listab = new helper.ListenerTable();
 var numOfHiddenEvents = 0;
-var sched = false;
 
 (function (sandbox) {
 
     function MyAnalysis() {
         this.invokeFunPre = function (iid, f, base, args, isConstructor, isMethod, functionIid) {
             // console.log('call ' + f.name + ' ' + iid);
+
             if (enableTracking) {
-                activeEvent.ctlInst++;
+                ctlInst++;
             }
 
             var fname = f.name;
@@ -251,7 +235,7 @@ var sched = false;
                 // if (evid >= 0) {
                     listab.register(evid, type, recv, cb);
                 // }
-                helper.DEBUG(fname + ':' + listab.toListenerId(type, recv));
+                // helper.DEBUG(fname + ':' + listab.toListenerId(type, recv));
                 
             }
 
@@ -259,12 +243,8 @@ var sched = false;
                 var type = args[0];
                 var recv = args[1];
                 var cb = args[2];
-                helper.DEBUG(fname + ':' + listab.toListenerId(type, recv));
+                // helper.DEBUG(fname + ':' + listab.toListenerId(type, recv));
                 listab.unregister(type, recv, cb);
-            }
-
-            if (fname === 'emit') {
-                helper.DEBUG('emit> ' + args[0] + ' ' + sandbox.iidToLocation(sandbox.sid, iid));
             }
 
             if (fname == 'pin_start') {
@@ -276,10 +256,6 @@ var sched = false;
                 if (enableTracking !== false) {
                     helper.DEBUG('------------------' + type + '---------------------------------------');
                     numOfHiddenEvents++;
-                    for (var arg in cb_args) {
-                        if (notIgnore(cb_args[arg]))
-                            etab.writeObj(activeEvent.eid, cb_args[arg]); // FIXME: The args should be thought of write!
-                    }
                     // return {f: f, base: base, args: args, skip: false};
                 } else {
 
@@ -287,11 +263,9 @@ var sched = false;
 
                     enableTracking = true;
                     activeEvent = new helper.EventLog( id, helper.getColor(type) );
+                    ctlInst = 0;
+                    activeEvent.startTime = Date.now();
                     etab.insert(activeEvent);
-                    for (var arg in cb_args) {
-                        if (notIgnore(cb_args[arg]))
-                            etab.writeObj(activeEvent.eid, cb_args[arg]); // FIXME: The args should be thought of write!
-                    }
 
                     helper.DEBUG('===================' + id + '=======================================');
                     helper.DEBUG('New Eve: ' + activeEvent.eid);
@@ -301,7 +275,7 @@ var sched = false;
                     var registers = listab.getRegisterEvents(type, recv);
 
                     for (var reg in registers) {
-                        helper.DEBUG(registers[reg] + "------>" + activeEvent.eid);
+                        // helper.DEBUG(registers[reg] + "------>" + activeEvent.eid);
                         etab.addCTLdependence(registers[reg], activeEvent.eid);
                     }
                 }
@@ -314,152 +288,28 @@ var sched = false;
                     return {f: f, base: base, args: args, skip: false};
                 }
 
-                helper.DEBUG('**********************elapsed < ' + activeEvent.ctlInst + ' >branches *******************');
                 enableTracking = false;
+                activeEvent.endTime = Date.now();
+                activeEvent.duration = activeEvent.endTime - activeEvent.startTime;
+                helper.DEBUG('**********************elapsed < ' + activeEvent.duration + ' >ms *******************');
+                helper.DEBUG('**********************elapsed < ' + ctlInst + ' >branches *******************');
+                
                 activeEvent = helper.noev;
                 helper.CHECK(numOfHiddenEvents === 0, 'No nested pin_end() !!!!');
                 // etab.generateDAG();
-                if (!sched) {
-                    sched = true;
-                    setInterval(etab.generateDAG, 10 * 1000, etab); 
-                }
             }
             return {f: f, base: base, args: args, skip: false};
         };
         this.invokeFun = function (iid, f, base, args, result, isConstructor, isMethod, functionIid) {
             return {result: result};
         };
-        this.forinObject = function (iid, val) {
-            return {result: val};
-        };
-        this.literal = function (iid, val, hasGetterSetter) {
-            if (util.isFunction(val)) {
-                 // helper.DEBUG('literal Funct>');
-
-                 if (!currentScope.isGlobal()) {
-                     // I am not in global, hence a new closure
-                     var etc = {};
-                     etc["iid"] = iid;
-                     var clos = helper.closet.newClosure(val, currentScope, etc);
-                 }
-
-            }
-            return {result: val};
-        };
-        this.forinObject = function (iid, val) {
-            return {result: val};
-        };
-        this.declare = function (iid, name, val, isArgument, argumentIndex, isCatchParam) {
-            // if (!currentScope.isGlobal()) 
-            currentScope.declare(name);
-
-            if (enableTracking) {
-                etab.writeName(activeEvent.eid, name);
-            }
-
-            return {result: val};
-        };
-        this.getFieldPre = function (iid, base, offset, isComputed, isOpAssign, isMethodCall) {
-            return {base: base, offset: offset, skip: false};
-        };
-        this.getField = function (iid, base, offset, val, isComputed, isOpAssign, isMethodCall) {
-            if (enableTracking) {
-                etab.readObj(activeEvent.eid, base);
-            }
-
-            return {result: val};
-        };
-        this.putFieldPre = function (iid, base, offset, val, isComputed, isOpAssign) {
-            return {base: base, offset: offset, val: val, skip: false};
-        };
-        this.putField = function (iid, base, offset, val, isComputed, isOpAssign) {
-            if (enableTracking) {
-                etab.writeObj(activeEvent.eid, base);
-            }
-
-            return {result: val};
-        };
-        this.read = function (iid, name, val, isGlobal, isScriptLocal) {
-            if (enableTracking) {
-                // helper.DEBUG('read < ' + name);
-                etab.readName(activeEvent.eid, name, sandbox.iidToLocation(sandbox.sid, iid));
-            }
-
-            return {result: val};
-        };
-        this.write = function (iid, name, val, lhs, isGlobal, isScriptLocal) {
-            if (enableTracking) {
-                // helper.DEBUG('write > ' + name);
-                etab.writeName(activeEvent.eid, name, sandbox.iidToLocation(sandbox.sid, iid));
-            }
-
-            return {result: val};
-        };
-        this._return = function (iid, val) {
-            return {result: val};
-        };
-        this._throw = function (iid, val) {
-            return {result: val};
-        };
-        this._with = function (iid, val) {
-            return {result: val};
-        };
-        this.functionEnter = function (iid, f, dis, args) {
-
-            var scope = helper.newScope(f);
-            // console.log(sandbox.iidToLocation(sandbox.sid, iid));
-            // helper.DEBUG("FE Leave << " + currentScope.print());
-            scopeStack.push(currentScope);
-            currentScope = scope;
-            // helper.DEBUG("FE Enter << " + currentScope.print());
-        };
-        this.functionExit = function (iid, returnVal, wrappedExceptionVal) {
-
-            // helper.DEBUG("FX Leave << " + currentScope.print());
-            currentScope = scopeStack.pop();
-            // helper.DEBUG("FX Enter << " + currentScope.print());
-            return {returnVal: returnVal, wrappedExceptionVal: wrappedExceptionVal, isBacktrack: false};
-        };
-        this.scriptEnter = function (iid, instrumentedFileName, originalFileName) {
-        };
-        this.scriptExit = function (iid, wrappedExceptionVal) {
-            return {wrappedExceptionVal: wrappedExceptionVal, isBacktrack: false};
-        };
-        this.binaryPre = function (iid, op, left, right, isOpAssign, isSwitchCaseComparison, isComputed) {
-            return {op: op, left: left, right: right, skip: false};
-        };
-        this.binary = function (iid, op, left, right, result, isOpAssign, isSwitchCaseComparison, isComputed) {
-            return {result: result};
-        };
-        this.unaryPre = function (iid, op, left) {
-            return {op: op, left: left, skip: false};
-        };
-        this.unary = function (iid, op, left, result) {
-            return {result: result};
-        };
         this.conditional = function (iid, result) {
             if (enableTracking) {
-                activeEvent.ctlInst++;
+                ctlInst++;
             }
             return {result: result};
-        };
-        this.instrumentCodePre = function (iid, code) {
-            return {code: code, skip: false};
-        };
-        this.instrumentCode = function (iid, newCode, newAst) {
-            return {result: newCode};
-        };
-        this.endExpression = function (iid) {
-        };
-        this.endExecution = function () {
-        };
-        this.runInstrumentedFunctionBody = function (iid, f, functionIid) {
-            return false;
-        };
-        this.onReady = function (cb) {
-            cb();
-        };
-    }
+        };   
+    };
 
     sandbox.analysis = new MyAnalysis();
 })(J$);

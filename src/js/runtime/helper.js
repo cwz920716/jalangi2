@@ -68,11 +68,23 @@ function AccessLog() {
 
     this.writeBefore = function() {
         return this.writer != -1;
-    }
+    };
+
+    this.readBefore = function() {
+        return this.reader != -1;
+    };
 
     this.hasRAW = function(eid) {
         return this.writeBefore() && this.writer !== eid;
-    }
+    };
+
+    this.hasWAW = function(eid) {
+        return this.writeBefore() && this.writer !== eid;
+    };
+
+    this.hasWAR = function(eid) {
+        return this.readBefore() && this.reader !== eid;
+    };
 }
 exports.AccessLog = AccessLog;
 
@@ -213,6 +225,11 @@ function EventLog(type, color) {
     this.dependences = {}; // by dependences, it could only be a RAW dependence
     this.CTLdependences = {}; // the event-listen/emit dependence
     this.color = color;
+
+    this.startTime = 0;
+    this.endTime = 0;
+    this.duration = 0;
+    this.ctlInst = 0;
 
     this.addDependence = function (eid, tag, msg) {
         if ( !hasKey(this.dependences, eid) ) {
