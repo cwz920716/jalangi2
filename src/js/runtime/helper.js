@@ -304,6 +304,11 @@ function ListenerTable() {
         }
 
         var idx = this.cbMap.getIndex(id, cb);
+        if (idx < 0) {
+            DEBUG(cb.name + ': no such callback!');
+            return;
+        }
+
         this.cbMap.removeByIndex(id, idx);
         this.ownerMap.removeByIndex(id, idx);
     };
@@ -371,7 +376,7 @@ function ArrayMap() {
         if (idx >= 0 && idx < map[k].length) {
             map[k].splice(idx, 1);
         } else
-            ERROR('Arraymap do not has that idx!');
+            ERROR('Arraymap do not have that idx!');
     };
 
     this.getVs = function(k) {

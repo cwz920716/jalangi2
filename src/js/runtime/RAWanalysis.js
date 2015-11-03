@@ -62,7 +62,7 @@ var currentScope = helper.__GLOBAL_SCOPE__;
 var scopeStack = [];
 
 var plotRAW = true;
-var plotCTL = false;
+var plotCTL = true;
 
 
 function EventTable() {
@@ -264,7 +264,7 @@ var sched = false;
             }
 
             if (fname === 'emit') {
-                helper.DEBUG('emit> ' + args[0] + ' ' + sandbox.iidToLocation(sandbox.sid, iid));
+                // helper.DEBUG('emit> ' + args[0] + ' ' + sandbox.iidToLocation(sandbox.sid, iid));
             }
 
             if (fname == 'pin_start') {

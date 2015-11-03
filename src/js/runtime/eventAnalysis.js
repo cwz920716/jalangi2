@@ -211,6 +211,8 @@ var etab = new EventTable();
 var listab = new helper.ListenerTable();
 var numOfHiddenEvents = 0;
 
+var barrier = true;
+
 (function (sandbox) {
 
     function MyAnalysis() {
@@ -219,6 +221,7 @@ var numOfHiddenEvents = 0;
 
             if (enableTracking) {
                 ctlInst++;
+                barrier = true;
             }
 
             var fname = f.name;
@@ -301,7 +304,16 @@ var numOfHiddenEvents = 0;
             return {f: f, base: base, args: args, skip: false};
         };
         this.invokeFun = function (iid, f, base, args, result, isConstructor, isMethod, functionIid) {
+            if (barrier) {
+                helper.DEBUG('Some Un-instrumented function: ' + f.name);
+            }
             return {result: result};
+        };
+        this.functionEnter = function (iid, f, dis, args) {
+            barrier = false;
+        };
+        this.functionExit = function (iid, returnVal, wrappedExceptionVal) {
+            return {returnVal: returnVal, wrappedExceptionVal: wrappedExceptionVal, isBacktrack: false};
         };
         this.conditional = function (iid, result) {
             if (enableTracking) {

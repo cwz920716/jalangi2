@@ -32,17 +32,28 @@ var debug = 1;
 var helper = require('./helper');
 cores = require('./cores');
 
-function ERROR(str) {
-    console.log('ERROR: ' + str);
-    process.exit(-1);
+function countLOC(cb) {
+  var str = cb.toString();
+  return str.split(/\r\n|\r|\n/).length;
 }
 
-function DEBUG(str) {
-    if (debug == 0)
-         return;
+function FunctionSet() {
+  this.set = [];
+  this.loc = 0;
 
-    console.log('DEBUG: ' + str);
+  this.add = function (cb) {
+    if (this.set.indexOf(cb) < 0) {
+      this.set.push(cb);
+      this.loc += countLOC(cb);
+    }
+  };
+
+  this.getLOC = function() {
+    return loc;
+  };
 }
+
+var fSet = new FunctionSet();
 
 (function (sandbox) {
     /**
@@ -160,6 +171,7 @@ function DEBUG(str) {
         this.invokeFunPre = function (iid, f, base, args, isConstructor, isMethod, functionIid) {
 
             // DEBUG('(' + sandbox.iidToLocation(sandbox.sid, iid) + ')');
+            fSet.add(f);
 
             if (f.name == 'require') {
                 // let's link to the instrumented library and see how it ends up with
@@ -182,19 +194,17 @@ function DEBUG(str) {
 
             }
 
+            if (f.name == 'dump') {
+                helper.DEBUG('------DUMP--------');
+                helper.DEBUG('LOC = ' + fSet.getLOC());
+                fSet = new FunctionSet();
+            }
+
+            helper.DEBUG(f);
             return {f: f, base: base, args: args, skip: false};
         };
-        this._throw = function (iid, val) {
-            return {result: val};
-        };
         this.functionEnter = function (iid, f, dis, args) {
-            if (f.name === 'emit') {
-                // DEBUG('emit> ' + args[0]);
-            }
-        };
-        this.functionExit = function (iid, returnVal, wrappedExceptionVal) {
-            // DEBUG('FExit> ');
-            return {returnVal: returnVal, wrappedExceptionVal: wrappedExceptionVal, isBacktrack: false};
+            // helper.DEBUG(f.name + sandbox.iidToLocation(sandbox.sid, iid));
         };
     }
 
